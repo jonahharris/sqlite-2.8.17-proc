@@ -1,0 +1,921 @@
+Common subdirectories: ../sqlite-2.8.17/src/CVS and src/CVS
+diff ../sqlite-2.8.17/src/attach.c src/attach.c
+87a88
+>   sqliteHashInit(&aNew->objectHash, SQLITE_HASH_STRING, 0);
+diff ../sqlite-2.8.17/src/build.c src/build.c
+228a229,235
+>     sqliteHashInit(&pDb->tblHash, SQLITE_HASH_STRING, 0);
+>     for(pElem=sqliteHashFirst(&temp1); pElem; pElem=sqliteHashNext(pElem)){
+>       Table *pTab = sqliteHashData(pElem);
+>       sqliteDeleteTable(db, pTab);
+>     }
+>     sqliteHashClear(&temp1);
+>     sqliteHashClear(&pDb->idxHash);
+231,232d237
+<     sqliteHashClear(&pDb->aFKey);
+<     sqliteHashClear(&pDb->idxHash);
+238,241c243,247
+<     sqliteHashInit(&pDb->tblHash, SQLITE_HASH_STRING, 0);
+<     for(pElem=sqliteHashFirst(&temp1); pElem; pElem=sqliteHashNext(pElem)){
+<       Table *pTab = sqliteHashData(pElem);
+<       sqliteDeleteTable(db, pTab);
+---
+>     temp2 = pDb->objectHash;
+>     sqliteHashInit(&pDb->objectHash, SQLITE_HASH_STRING, 0);
+>     for(pElem=sqliteHashFirst(&temp2); pElem; pElem=sqliteHashNext(pElem)){
+>       Object *pObject = sqliteHashData(pElem);
+>       sqliteDeleteObject(pObject);
+243c249,250
+<     sqliteHashClear(&temp1);
+---
+>     sqliteHashClear(&temp2);
+>     sqliteHashClear(&pDb->aFKey);
+339,340c346,347
+<     assert( sqliteHashFind(&db->aDb[pTable->iDb].aFKey,
+<                            pFKey->zTo, strlen(pFKey->zTo)+1)!=pFKey );
+---
+> //    assert( sqliteHashFind(&db->aDb[pTable->iDb].aFKey,
+> //                           pFKey->zTo, strlen(pFKey->zTo)+1)!=pFKey );
+972,985c979,998
+<     pOld = sqliteHashInsert(&db->aDb[p->iDb].tblHash, 
+<                             p->zName, strlen(p->zName)+1, p);
+<     if( pOld ){
+<       assert( p==pOld );  /* Malloc must have failed inside HashInsert() */
+<       return;
+<     }
+<     for(pFKey=p->pFKey; pFKey; pFKey=pFKey->pNextFrom){
+<       int nTo = strlen(pFKey->zTo) + 1;
+<       pFKey->pNextTo = sqliteHashFind(&db->aDb[p->iDb].aFKey, pFKey->zTo, nTo);
+<       sqliteHashInsert(&db->aDb[p->iDb].aFKey, pFKey->zTo, nTo, pFKey);
+<     }
+<     pParse->pNewTable = 0;
+<     db->nTable++;
+<     db->flags |= SQLITE_InternChanges;
+---
+> 
+> 		if( db->aDb[p->iDb].aFKey.count>0 && db->init.busy==0) {
+> 			db->flags |= SQLITE_InternChanges;
+> 			sqliteResetInternalSchema(db, p->iDb);
+> 		} else {
+> 			pOld = sqliteHashInsert(&db->aDb[p->iDb].tblHash, 
+> 															p->zName, strlen(p->zName)+1, p);
+> 			if( pOld ){
+> 				assert( p==pOld );  /* Malloc must have failed inside HashInsert() */
+> 				return;
+> 			}
+> 			for(pFKey=p->pFKey; pFKey; pFKey=pFKey->pNextFrom){
+> 				int nTo = strlen(pFKey->zTo) + 1;
+> 				pFKey->pNextTo = sqliteHashFind(&db->aDb[p->iDb].aFKey, pFKey->zTo, nTo);
+> 				sqliteHashInsert(&db->aDb[p->iDb].aFKey, pFKey->zTo, nTo, pFKey);
+> 			}
+> 			db->nTable++;
+> 			db->flags |= SQLITE_InternChanges;
+> 		}
+> 		pParse->pNewTable = 0;
+1180a1194
+> 	FKey *pFKey;
+1285a1300
+> 
+1292,1293c1307,1313
+<     sqliteUnlinkAndDeleteTable(db, pTable);
+<     db->flags |= SQLITE_InternChanges;
+---
+>   	pFKey = sqliteHashFind(&db->aDb[iDb].aFKey, pTable->zName, strlen(pTable->zName)+1);
+> 		if( pFKey ) {
+> 		  sqliteSetString(&pParse->zWarning, "table ", pTable->zName,
+> 			  " was target of foreign key constraints (now disabled)", (char*)0);
+> 		}
+> 		db->flags |= SQLITE_InternChanges;
+> 		sqliteResetInternalSchema(db, iDb);
+1364a1385,1388
+> 	if( ((flags>>16)&0xff)!=OE_Restrict ) {
+>       sqliteErrorMsg(pParse, "only 'on insert restrict' is supported");
+>       goto fk_end;
+> 	}
+1391a1416
+> 	pFKey->nId = (p->pFKey) ? p->pFKey->nId+1 : 0;
+1392a1418
+>   pFKey->pNextDef = pParse->db->pDeferredFKeys;
+1435c1461,1462
+<   /* Link the foreign key to the table as the last step.
+---
+>   /* Link the foreign key to the table as the last step and add to the
+> 	** foreign key deferred DDL work list.
+1437c1464
+<   p->pFKey = pFKey;
+---
+>   pParse->db->pDeferredFKeys = p->pFKey = pFKey;
+2090c2117
+<   assert( db->aDb[iDb].pBt!=0 );
+---
+>   assert( iDb==1 || db->aDb[iDb].pBt!=0 );
+Only in src/: config.h
+diff ../sqlite-2.8.17/src/expr.c src/expr.c
+565a566,577
+>   ** cnt==0 means there was not match.  if we are parsing a
+>   ** procedural block, check if it is a variable.
+>   */
+>   if( cnt==0 && pParse->pCurrentBlock ) {
+> 	assert( zDb==0 && zTab==0 );
+> 	if( sqliteLookupVar(pParse, pParse->pCurrentBlock, pExpr)==0 ) {
+>       sqliteFree(zCol);
+>       return 0;  
+> 	}
+>   }
+> 
+>   /*
+999a1012,1017
+> 	case TK_FOR:
+> 	case TK_ASSIGN:
+>     case TK_VAR: {
+>       return SQLITE_SO_TEXT;
+>     }
+> 
+1067a1086,1089
+>     case TK_VAR: {
+>       sqliteVdbeAddOp(v, OP_MemLoad, pExpr->iColumn, 0);
+>       break;
+>     }
+diff ../sqlite-2.8.17/src/main.c src/main.c
+66a67
+>     case 'p':
+350a352
+> 	sqliteDoDefDDL(db, 0);
+493a496
+>     sqliteHashInit(&db->aDb[i].objectHash, SQLITE_HASH_STRING, 0);
+609,610c612,614
+<   sqliteResetInternalSchema(db, 0);
+<   /* sqliteRollbackInternalChanges(db); */
+---
+>   if( db->flags & SQLITE_InternChanges ){
+>     sqliteResetInternalSchema(db, 0);
+>   }
+Only in src/: opcodes.c
+Only in src/: opcodes.h
+Only in src/: parse.c
+Only in src/: parse.h
+diff ../sqlite-2.8.17/src/parse.y src/parse.y
+64c64
+<           COLUMN AGG_FUNCTION.
+---
+>           COLUMN AGG_FUNCTION BLOCK VAR ASSIGN SQL.
+124,125c124,125
+<   ABORT AFTER ASC ATTACH BEFORE BEGIN CASCADE CLUSTER CONFLICT
+<   COPY DATABASE DEFERRED DELIMITERS DESC DETACH EACH END EXPLAIN FAIL FOR
+---
+>   ABORT AFTER ASC ATTACH BEFORE CASCADE CLUSTER CONFLICT
+>   COPY DATABASE DEFERRED DELIMITERS DESC DETACH EACH EXPLAIN FAIL FOR
+207c207
+< refargs(A) ::= refargs(X) refarg(Y). { A = (X & Y.mask) | Y.value; }
+---
+> refargs(A) ::= refargs(X) refarg(Y). { A = (X & ~Y.mask) | Y.value; }
+694d693
+< 
+897a897,1112
+> 
+> ////////////////////////// PROCEDURAL LANGUAGE /////////////////////////////////
+> //
+> 
+> %type block {Block*}
+> %destructor block {sqliteBlockDelete($$);}
+> 
+> block(A) ::= blockinit proc_locals_opt BEGIN stmtlist(X) SEMI excep_opt(Y) END.
+> 											{A = sqliteEndBlock(pParse, X, Y);}
+> 
+> blockinit ::= . {sqliteStartBlock(pParse, 0);}
+> 
+> // local variables
+> 
+> proc_locals_opt ::= DECLARE varlist.
+> proc_locals_opt ::= .
+> 
+> varlist ::= varlist var_decl.
+> varlist ::= var_decl.
+> 
+> var_decl ::= var_id localvar_type notnull_opt init_decl_opt SEMI.
+> 
+> var_id ::= nm(X).							 {sqliteAddProcVar(pParse,&X);}
+> 
+> init_decl_opt ::= COLON EQ expr(X).  {sqliteAddProcVarExpr(pParse, X, 0);}
+> init_decl_opt ::= DEFAULT expr(X).   {sqliteAddProcVarExpr(pParse, X, 0);}
+> init_decl_opt ::= .
+> 
+> notnull_opt ::= NOT NULL.  {sqliteAddProcVarExpr(pParse, 0, 1);}
+> notnull_opt ::= .
+> 
+> localvar_type ::= .
+> localvar_type ::= typename(X).                    {sqliteAddProcVarType(pParse,&X,&X);}
+> localvar_type ::= typename(X) LP signed RP(Y).    {sqliteAddProcVarType(pParse,&X,&Y);}
+> localvar_type ::= typename(X) LP signed COMMA signed RP(Y).
+> 												  {sqliteAddProcVarType(pParse,&X,&Y);}
+> // exception handlers
+> 
+> %type excep_opt {StmtList*}
+> %destructor excep_opt {sqliteStmtListDelete($$);}
+> 
+> excep_opt(A) ::= EXCEPTION whenlist(X).  {A = X;}
+> excep_opt(A) ::= .                       {A = 0;}
+> 
+> %type excep {Expr*}
+> %destructor excep {sqliteExprDelete($$);}
+> 
+> excep(A) ::= nm(X).					{A = sqliteExpr(TK_ID, 0, 0, &X);}
+> excep(A) ::= excep(X) OR excep(Y).  {A = sqliteExpr(TK_OR, X, Y, 0);}
+> 
+> %type whenlist {StmtList*}
+> %destructor whenlist {sqliteStmtListDelete($$);}
+> %type whenitem {Stmt*}
+> %destructor whenitem {sqliteStmtDelete($$);}
+> 
+> whenlist(A) ::= whenlist(X) whenitem(Y).             {A = sqliteStmtListAppend(X,Y);}
+> whenlist(A) ::= whenitem(X).                         {A = sqliteStmtListAppend(0,X);}
+> whenitem(A) ::= WHEN excep(X) THEN stmtlist(Y) SEMI. {A = sqliteStmt(pParse,TK_WHEN,X,Y,0,0);}
+> whenitem(A) ::= WHEN OTHERS THEN stmtlist(Y) SEMI.   {A = sqliteStmt(pParse,TK_WHEN,0,Y,0,0);}
+> 
+> // statements
+> 
+> %type stmtlist {StmtList*}
+> %destructor stmtlist {sqliteStmtListDelete($$);}
+> %type stmtitem {Stmt*}
+> %destructor stmtitem {sqliteStmtDelete($$);}
+> %type stmt {Stmt*}
+> %destructor stmt {sqliteStmtDelete($$);}
+> 
+> stmtlist(A) ::= stmtlist(X) SEMI stmtitem(Y). {A = sqliteStmtListAppend(X,Y);}
+> stmtlist(A) ::= stmtitem(X).                  {A = sqliteStmtListAppend(0,X);}
+> stmtitem(A) ::= stmt(X).                      {A = X;}
+> 
+> // IF - THEN - ELSIF - ELSE - END IF
+> 
+> %type else_opt {Stmt*}
+> %destructor else_opt {sqliteStmtDelete($$);}
+> 
+> else_opt(A) ::= ELSE stmtlist(Y) SEMI else_opt(Z). {
+>   A = sqliteStmt(pParse,TK_ELSE,0,Y,Z,0);
+> }
+> else_opt(A) ::= ELSIF expr(X) THEN stmtlist(Y) SEMI else_opt(Z). {
+>   A = sqliteStmt(pParse,TK_ELSIF,X,Y,Z,0);
+> }
+> else_opt(A) ::= END IF.    { A = 0; }
+> 
+> stmt(A) ::= IF expr(X) THEN stmtlist(Y) SEMI else_opt(Z). {
+>   A = sqliteStmt(pParse,TK_IF,X,Y,Z,0);
+> }
+> 
+> // WHILE, FOR, LOOP .. END LOOP
+> 
+> %type loop {StmtList*}
+> %destructor loop {sqliteStmtListDelete($$);}
+> 
+> loop(A) ::= LOOP stmtlist(Y) SEMI END LOOP.    { A = Y; }
+> 
+> stmt(A) ::= loop(Y). {
+>   A = sqliteStmt(pParse,TK_LOOP,0,Y,0,0);
+> }
+> stmt(A) ::= WHILE expr(X) loop(Y). {
+>   A = sqliteStmt(pParse,TK_WHILE,X,Y,0,0);
+> }
+> stmt(A) ::= FOR nm(N) IN expr(L) DOTDOT expr(U) loop(Y).	{
+>   Expr *temp1 = sqliteExpr(TK_ID, 0, 0, &N);
+>   Expr *temp2 = sqliteExpr(TK_FOR, L, U, 0);
+>   Expr *temp3 = sqliteExpr(TK_ASSIGN, temp1, temp2, 0);
+>   A = sqliteStmt(pParse,TK_FOR,temp3,Y,0,0);
+> }
+> 
+> // CASE WHEN ELSE END CASE
+> 
+> stmt(A) ::= CASE case_operand(X) caselist(Y) END CASE. {
+>   A = sqliteStmt(pParse,TK_CASE,X,Y,0,0);
+> }
+> stmt(A) ::= CASE case_operand(X) caselist(Y) ELSE stmtlist(Z) SEMI END CASE. {
+>   Stmt *pStmt = sqliteStmt(pParse,TK_ELSE,0,Z,0,0);
+>   A = sqliteStmt(pParse,TK_CASE,X,Y,pStmt,0);
+> }
+> 
+> %type caselist {StmtList*}
+> %destructor caselist {sqliteStmtListDelete($$);}
+> %type caseitem {Stmt*}
+> %destructor caseitem {sqliteStmtDelete($$);}
+> caselist(A) ::= caselist(X) caseitem(Y).            {A = sqliteStmtListAppend(X,Y);}
+> caselist(A) ::= caseitem(X).                        {A = sqliteStmtListAppend(0,X);}
+> caseitem(A) ::= WHEN expr(X) THEN stmtlist(Y) SEMI. {A = sqliteStmt(pParse,TK_WHEN,X,Y,0,0);}
+> 
+> // Starting with ID: assignment & procedure call
+> 
+> stmt(A) ::= nm(X) COLON EQ expr(Y).	{
+>   Expr *temp1 = sqliteExpr(TK_ID, 0, 0, &X);
+>   Expr *temp2 = sqliteExpr(TK_ASSIGN, temp1, Y, 0);
+>   A = sqliteStmt(pParse,TK_ASSIGN,temp2,0,0,0);
+> }
+> stmt(A) ::= nm(X) LP exprlist(E) RP. {
+>   Expr *temp1 = sqliteExpr(TK_ID, 0, 0, &X);
+>   temp1->pList = E;
+>   A = sqliteStmt(pParse,TK_PROCEDURE,temp1,0,0,0);
+> }
+> stmt(A) ::= nm(X) . {
+>   Expr *temp1 = sqliteExpr(TK_ID, 0, 0, &X);
+>   A = sqliteStmt(pParse,TK_PROCEDURE,temp1,0,0,0);
+> }
+> 
+> // simple statements
+> 
+> stmt(A) ::= NULL.						{A = sqliteStmt(pParse,TK_NULL,0,0,0,0);}
+> stmt(A) ::= PRINT expr(X).				{A = sqliteStmt(pParse,TK_PRINT,X,0,0,0);}
+> stmt(A) ::= EXIT WHEN expr(X).			{A = sqliteStmt(pParse,TK_EXIT,X,0,0,0);}
+> stmt(A) ::= EXIT.						{A = sqliteStmt(pParse,TK_EXIT,0,0,0,0);}
+> stmt(A) ::= RETURN expr(X).				{A = sqliteStmt(pParse,TK_RETURN,X,0,0,0);}
+> stmt(A) ::= RETURN.	{
+>   Expr *temp1 = sqliteExpr(TK_NULL, 0, 0, 0);
+>   A = sqliteStmt(pParse,TK_RETURN,temp1,0,0,0);
+> }
+> stmt(A) ::= RAISE.						{A = sqliteStmt(pParse,TK_RAISE,0,0,0,0);}
+> stmt(A) ::= RAISE nm(X). {
+>   Expr *temp1 = sqliteExpr(TK_ID, 0, 0, &X);
+>   A = sqliteStmt(pParse,TK_RAISE,temp1,0,0,0);
+> }
+> 
+> stmt(A) ::= block(X).					{A = sqliteStmt(pParse,TK_BLOCK,0,0,0,X);}
+> 
+> // SQL statements
+> 
+> stmt(A) ::= SELECT distinct(D) selcollist(W) INTO itemlist(Y) from(X) where_opt(K)
+>                  groupby_opt(P) having_opt(Q) orderby_opt(Z) limit_opt(L). {
+>   Select* ss = sqliteSelectNew(W,X,K,P,Q,Z,D,L.limit,L.offset);
+>   A = sqliteSQLStmt(TK_SELECT, 0, 0, Y, ss, 0, 0);
+> }
+> stmt(A) ::= insert_cmd(R) INTO nm(X) inscollist_opt(F) VALUES LP itemlist(Y) RP.  {
+>   A = sqliteSQLStmt(TK_INSERT, &X, F, Y, 0, 0, R);
+> }
+> stmt(A) ::= insert_cmd(R) INTO nm(X) inscollist_opt(F) select(S). {
+>   A = sqliteSQLStmt(TK_INSERT, &X, F, 0, S, 0, R);
+> }
+> stmt(A) ::= UPDATE orconf(R) nm(X) SET setlist(Y) where_opt(Z).  {
+>   A = sqliteSQLStmt(TK_UPDATE, &X, 0, Y, 0, Z, R);
+> }
+> stmt(A) ::= DELETE FROM nm(X) where_opt(Z).	{
+>   A = sqliteSQLStmt(TK_DELETE, &X, 0, 0, 0, Z, 0);
+> }
+> 
+> ////////////////////////// CREATE/DROP PROCEDURE and FUNCTION ////////////////////////
+> //
+> 
+> cmd ::= CREATE(A) proc_decl proc_locals_opt BEGIN stmtlist(X) SEMI excep_opt(Y) END(Z). {
+>   Token all;
+>   all.z = A.z;
+>   all.n = (Z.z - A.z) + Z.n;
+>   sqliteFinishProc(pParse, sqliteEndBlock(pParse,X,Y), &all);
+> }
+> 
+> proc_decl ::= kw_proc nm(B) LP paramlist RP AS. {
+>   sqliteBeginProc(pParse, TK_PROCEDURE, &B);
+> }
+> 
+> kw_proc ::= PROCEDURE.		{sqliteStartBlock(pParse, 1);}
+> 
+> paramlist ::= paramlist COMMA param_decl.
+> paramlist ::= param_decl.
+> paramlist ::= .
+> 
+> param_decl ::= var_id localvar_type.
+> 
+> cmd ::= DROP PROCEDURE nm(X).		{ sqliteDropProc(pParse, &X); }
+> 
+> ////////////////////////// DIRECT EXECUTION /////////////////////////////////
+> //
+> 
+> cmd ::= EXEC PROCEDURE nm(X) LP exprlist(E) RP.		{ sqliteExecProc(pParse, &X, E);}
+> cmd ::= EXEC PROCEDURE nm(X).                 		{ sqliteExecProc(pParse, &X, 0);}
+> 
+> cmd ::= EXEC block(B).	{sqliteExecBlock(pParse, B);}
+> 
+Only in src/: proc.c
+Only in src/: refinteg.c
+diff ../sqlite-2.8.17/src/select.c src/select.c
+534a535,546
+>     /* If this is a "select into", then leave the results on the
+> 	** stack and break out of the loop.
+>     */
+> 	case SRT_Stack: {
+>       if( pOrderBy ){
+>         pushOntoSorter(pParse, v, pOrderBy);
+>       }else{
+>         sqliteVdbeAddOp(v, OP_Goto, 0, iBreak);
+>       }
+>       break;
+>     }
+> 
+616a629,632
+> 	case SRT_Stack: {
+>       sqliteVdbeAddOp(v, OP_Goto, 0, end1);
+> 	  break;
+> 	}
+diff ../sqlite-2.8.17/src/shell.c src/shell.c
+993a994,995
+> extern int sqliteStrNICmp(const char*,const char*,int);
+> 
+1000d1001
+<   extern int sqliteStrNICmp(const char*,const char*,int);
+1065c1066
+<           printf("SQL error: %s\n", zErrMsg);
+---
+>           printf("SQL %s: %s\n", rc?"error":"warning", zErrMsg);
+1206a1208,1209
+> //#include <crtdbg.h>
+> 
+1218a1222,1231
+> /*
+> 	if(1) {
+> 		int tmpFlag = _CrtSetDbgFlag( _CRTDBG_REPORT_FLAG );
+>     tmpFlag &= 0x0000ffff;
+> //		tmpFlag |= _CRTDBG_CHECK_ALWAYS_DF | _CRTDBG_ALLOC_MEM_DF;
+> 		_CrtSetDbgFlag( tmpFlag );
+> 	}
+> */
+> 
+> 
+Only in src/: sqlite.h
+diff ../sqlite-2.8.17/src/sqliteInt.h src/sqliteInt.h
+251a252,257
+> typedef struct Variable Variable;
+> typedef struct Stmt Stmt;
+> typedef struct SQLStmt SQLStmt;
+> typedef struct StmtList StmtList;
+> typedef struct Block Block;
+> typedef struct Object Object;
+266a273
+>   Hash objectHash;     /* All objects indexed by name */
+385a393
+>   FKey *pDeferredFKeys;					/* Linked list of foreign key deferred DDL work */
+540a549
+> 	int nId;					/* Sequence number of this FKey (used in name generation) */
+542a552
+>   FKey *pNextDef;   /* Next foreign key in deferred DDL work list */
+702a713
+> #define EP_NotNull      0x0002  /* VAR node for Not Null variable */
+717c728
+< ** list of "ID = expr" items in an UPDATE.  A list of expressions can
+---
+> ** list of "ID = expr" items in an UPDATE. A list of expressions can
+719c730
+< ** field is not used.
+---
+> ** field is not used. 
+877a889
+> #define SRT_Stack       12  /* Leave result on the stack */
+912a925
+>   char *zWarning;      /* A warning message */
+933a947,949
+>   Block *pCurrentBlock; 	/* Frame of innermost procedure block being coded */
+>   Object *pNewObject;		/* Object under construct by a CREATE ... */
+>   int iLoopExit;        /* Target label of EXIT jump; 0 means we're not inside a loop */
+1075a1092,1166
+> ** Each node of a variable list in the parse tree is an instance
+> ** of this structure.
+> **
+> */
+> struct Variable {
+>   char *zName;     /* Name of this variable */
+>   Expr *pDflt;     /* Default value of this variable */
+>   char *zType;     /* Data type for this variable */
+>   int mVar;		   /* memory cell number of variable */
+>   u8 notNull;      /* True if there is a NOT NULL constraint */
+>   u8 isParam;	   /* True if this is a parameter */
+> };
+> 
+> /*
+> ** Each node of a statement list in the parse tree is an instance
+> ** of this structure.
+> **
+> */
+> struct Stmt {
+>   int op;            /* Type of statement, e.g. TK_IF, TK_WHILE, TK_SQL, etc. */
+>   Expr *pExpr1;      /* Statement expression */
+>   StmtList *pStmt1;	 /* First sub-statements */
+>   Stmt *pStmt2;	     /* Second sub-statement (used for IF & CASE)*/
+>   Block *pBlock;	   /* Block, if this statement is a sub-block */
+>   SQLStmt *pSql;	   /* SQL statement details, if this is one */
+> };
+> 
+> struct SQLStmt {
+>   int op;              /* One of TK_DELETE, TK_UPDATE, TK_INSERT, TK_SELECT */
+>   int orconf;          /* OE_Rollback etc. */
+>   Select *pSelect;     /* Valid for SELECT and sometimes 
+> 						  INSERT steps (when pExprList == 0) */
+>   Token target;        /* Valid for DELETE, UPDATE, INSERT steps */
+>   Expr *pWhere;        /* Valid for DELETE, UPDATE steps */
+>   ExprList *pExprList; /* Valid for UPDATE statements and sometimes 
+> 						  INSERT steps (when pSelect == 0)         */
+>   IdList *pIdList;     /* Valid for INSERT statements only */
+> };
+> 
+> /*
+> ** A list of statements.
+> */
+> struct StmtList {
+>   int nStmt;             /* Number of expressions on the list */
+>   int nAlloc;            /* Number of entries allocated below */
+>   struct StmtList_item {
+>     Stmt *pStmt;         /* The list of statements */
+>   } *a;                  /* One entry for each expression */
+> };
+> 
+> /*
+>  * An instance of struct ProcStack stores information required during code
+>  */
+> struct Block {
+>   int nVar;        /* Number of local variables in this block */
+>   Variable *aVar;  /* Detail of each local variable */
+>   int mReturn;     /* Number of memory cell with return value */
+>   int nExit;       /* Label no. of halt statement */
+>   int params;	   /* True while parsing parameters */
+>   Object *pObj;	   /* Object this body belongs to, if any */
+>   StmtList *pStList; /* List of statements in this block */
+>   StmtList *pExList; /* List of exception handlers in this block */
+>   Block *pParent;  /* Enclosing block, or null if current is outermost */
+> };
+> 
+> struct Object {
+>   char *name;             /* The name of the object                      */
+>   u8 iDb;                 /* Database containing this object             */
+>   u8 what;                /* One of TK_PROCEDURE, TK_FUNCTION            */
+>   int nParam;			  /* Number of parameters                        */
+>   int nOp;                /* Number of instructions in the program       */
+>   VdbeOp *aOp;            /* Space to hold the vdbe program              */
+> };
+> 
+> /*
+1270a1362,1386
+> 
+> void sqliteProc(Parse *pParse, ExprList *pList);
+> void sqliteStartBlock(Parse*, int);
+> Block *sqliteEndBlock(Parse*, StmtList*, StmtList*);
+> void sqliteStmtListDelete(StmtList *pList);
+> void sqliteBlockDelete(Block *pBlock);
+> void sqliteAddProcVar(Parse *pParse, Token *pName);
+> void sqliteAddProcVarType(Parse *pParse, Token *pFirst, Token *pLast);
+> void sqliteAddProcVarExpr(Parse *pParse, Expr *pExpr1, int notnull);
+> int sqliteLookupVar(Parse*, Block*, Expr*);
+> Stmt* sqliteStmt(Parse*, int, Expr*, StmtList*, Stmt*, Block*);
+> void sqliteStmtDelete(Stmt *p);
+> StmtList *sqliteStmtListAppend(StmtList *pList, Stmt *pStmt);
+> void sqliteStmtListDelete(StmtList *pList);
+> Stmt *sqliteSQLStmt(int, Token *, IdList *, ExprList *, Select *, Expr *, int);
+> 
+> void sqliteFinishProc(Parse*, Block*, Token*);
+> void sqliteBeginProc(Parse*, int, Token*);
+> void sqliteDropProc(Parse*, Token*);
+> void sqliteDeleteObject(Object*);
+> void sqliteDropProcPtr(Parse*, Object*);
+> void sqliteExecProc(Parse*, Token*, ExprList*);
+> void sqliteExecBlock(Parse*, Block*);
+> 
+> int sqliteDoDefDDL(sqlite*, char**);
+diff ../sqlite-2.8.17/src/tokenize.c src/tokenize.c
+63a64
+>   { "DECLARE",           TK_DECLARE,      },
+75a77
+>   { "ELSIF",             TK_ELSIF,        },
+76a79,81
+>   { "EXCEPTION",         TK_EXCEPTION,    },
+>   { "EXEC",              TK_EXEC,         },
+>   { "EXIT",              TK_EXIT,         },
+95a101
+>   { "IF",                TK_IF,           },
+102a109
+>   { "LOOP",              TK_LOOP,         },
+112a120
+>   { "OTHERS",            TK_OTHERS,       },
+115a124,125
+>   { "PRINT",             TK_PRINT,        },
+>   { "PROCEDURE",         TK_PROCEDURE,    },
+118a129
+>   { "RETURN",            TK_RETURN,       },
+140a152
+>   { "WHILE",             TK_WHILE,        }
+246a259,262
+>     case ':': {
+>       *tokenType = TK_COLON;
+>       return 1;
+>     }
+346,347c362,368
+<       *tokenType = TK_DOT;
+<       return 1;
+---
+>       if( z[1]=='.' ){
+>         *tokenType = TK_DOTDOT;
+>         return 2;
+>       }else{
+>         *tokenType = TK_DOT;
+>         return 1;
+> 	  }
+476a498,505
+>   if( pParse->zWarning ){
+>     if( pzErrMsg && *pzErrMsg==0 ){
+>       *pzErrMsg = pParse->zWarning;
+>     }else{
+>       sqliteFree(pParse->zWarning);
+>     }
+>     pParse->zWarning = 0;
+>   }
+502c531
+< #define tkTRIGGER 3
+---
+> #define tkCODE    3
+511,513c540,542
+< ** Special handling is require for CREATE TRIGGER statements.
+< ** Whenever the CREATE TRIGGER keywords are seen, the statement
+< ** must end with ";END;".
+---
+> ** Special handling is require for CREATE TRIGGER and other statements with
+> ** code bodies. Whenever statements are seen, the statement must match each
+> ** BEGIN with a matching ";END;".
+531c560
+< **   (4) TRIGGER   We are in the middle of a trigger definition that must be
+---
+> **   (4) CODE      We are in the middle of a procedural definition that must be
+539a569,572
+> ** If we encounter the BEGIN keyword we increment the nesting level. If we
+> ** encounter ;END; we decrease it. If we reach nesting level 0, we change to
+> ** state (0) START, else we continue with state (4) CODE.
+> **
+546c579
+< **   (3) tkTRIGGER   The "trigger" keyword.
+---
+> **   (3) tkCODE      The "trigger", "exec" or "procedure" keyword.
+555,556c588,590
+<   u8 state = 0;   /* Current state, using numbers defined in header comment */
+<   u8 token;       /* Value of the next token */
+---
+>   u8  state = 0;   /* Current state, using numbers defined in header comment */
+>   u8  token;       /* Value of the next token */
+>   int nesting = 0; /* Number of BEGIN keywords seen so far */
+563,571c597,605
+<                      /* Token:                                                */
+<      /* State:       **  EXPLAIN  CREATE  TEMP  TRIGGER  END  SEMI  WS  OTHER */
+<      /* 0   START: */ {       1,      2,    3,       3,   3,    0,  0,     3, },
+<      /* 1 EXPLAIN: */ {       3,      2,    3,       3,   3,    0,  1,     3, },
+<      /* 2  CREATE: */ {       3,      3,    2,       4,   3,    0,  2,     3, },
+<      /* 3  NORMAL: */ {       3,      3,    3,       3,   3,    0,  3,     3, },
+<      /* 4 TRIGGER: */ {       4,      4,    4,       4,   4,    5,  4,     4, },
+<      /* 5    SEMI: */ {       4,      4,    4,       4,   6,    5,  5,     4, },
+<      /* 6     END: */ {       4,      4,    4,       4,   4,    0,  6,     4, },
+---
+>                      /* Token:                                             */
+>      /* State:       **  EXPLAIN  CREATE  TEMP  CODE  END  SEMI  WS  OTHER */
+>      /* 0   START: */ {       1,      2,    3,    3,   3,    0,  0,     3, },
+>      /* 1 EXPLAIN: */ {       3,      2,    3,    3,   3,    0,  1,     3, },
+>      /* 2  CREATE: */ {       3,      3,    2,    4,   3,    0,  2,     3, },
+>      /* 3  NORMAL: */ {       3,      3,    3,    3,   3,    0,  3,     3, },
+>      /* 4    CODE: */ {       4,      4,    4,    4,   4,    5,  4,     4, },
+>      /* 5    SEMI: */ {       4,      4,    4,    4,   6,    5,  5,     4, },
+>      /* 6     END: */ {       4,      4,    4,    4,   4,    0,  6,     4, },
+631a666,672
+>             case 'b': case 'B': {
+>               if( nId==5 && sqliteStrNICmp(zSql, "begin", 5)==0 ){
+>                 nesting++;
+>               }
+>               token = tkOTHER;
+>               break;
+>             }
+642c683
+<                 token = tkTRIGGER;
+---
+>                 token = tkCODE;
+651a693,700
+>             case 'p': case 'P': {
+>               if( nId==9 && sqliteStrNICmp(zSql, "procedure", 9)==0 ){
+>                 token = tkCODE;
+>               }else{
+>                 token = tkOTHER;
+>               }
+>               break;
+>             }
+656a706,708
+>               }else if( nId==4 && sqliteStrNICmp(zSql, "exec", 4)==0 ){
+>                 if( state<2 ) state = 2;
+>                 token = tkCODE;
+675c727,733
+<     state = trans[state][token];
+---
+>     if( token==tkSEMI && state==6 ) {
+>       nesting--;
+>       /* ignore nested ";END;" */
+>       state = (nesting>0) ? 5 : 0;
+>     } else {
+>       state = trans[state][token];
+>     }
+diff ../sqlite-2.8.17/src/vdbe.c src/vdbe.c
+247a248
+> 
+2218a2220,2226
+>   if( db->pDeferredFKeys!=0 ){
+>     if( sqliteSafetyOff(db) ) goto abort_due_to_misuse; 
+>     if( sqliteDoDefDDL(db, &p->zErrMsg)!=0 ){
+>       rc = SQLITE_ERROR;
+>     }
+>     if( sqliteSafetyOn(db) ) goto abort_due_to_misuse;
+>   }
+4323a4332
+>       int j;
+4324a4334,4336
+>       for(j=nOld; j<p->nMem; j++){
+>         aMem[j].flags = MEM_Null;
+>       }
+4760a4773,4945
+> /* Opcode: Exec P1 * P3
+> **
+> ** Execute a procedure with name P3. Pop the P1 number of
+> ** parameters of the stack and pass as parameters to the
+> ** procedure.
+> */
+> case OP_Exec: {
+>   Vdbe *v = sqliteVdbeCreate(db);
+>   Object *pObj;
+>   char *pErrMsg = 0;
+> 
+>   pObj = sqliteHashFind(&(db->aDb[0].objectHash), pOp->p3, strlen(pOp->p3)+1);
+>   pTos -= pOp->p1; /* set pTos to before first parameter */
+>   if( pObj && v ){
+> 	  int i;
+> 	  /* set the program code */
+>       v->nOpAlloc = -1;
+>       v->nOp = pObj->nOp;
+>       v->aOp = pObj->aOp;
+> 	  /* move the parameters */
+> 	  v->nMem = pOp->p1+1;
+> 	  v->aMem = sqliteMalloc(v->nMem*sizeof(p->aMem[0]));
+> 	  v->aMem->flags = MEM_Null;
+> 	  for(i=1; i<v->nMem; i++) {
+>   		Deephemeralize(&pTos[i]);
+> 	    v->aMem[i] = pTos[i];
+> 	    if( v->aMem[i].flags & MEM_Short ){
+>           v->aMem[i].z = v->aMem[i].zShort;
+>       }
+> 	  }
+> 	  sqliteVdbeMakeReady(v, 0, 0);
+> 	  sqliteVdbeExec(v);
+> 	  /* check for exceptions */
+>     if( v->zErrMsg ) {
+>       p->zErrMsg = v->zErrMsg;
+>       if( p->errorHandler==0 ) {
+>         p->magic = VDBE_MAGIC_HALT;
+>         p->pTos = pTos;
+>         p->rc = SQLITE_CONSTRAINT;
+>         p->errorAction = OE_Abort;
+>         return SQLITE_ERROR;
+>       }
+>       CHECK_FOR_INTERRUPT;
+>       pc = p->errorHandler - 1;
+> 	    assert( pTos->flags==MEM_Addr );
+> 	    p->errorHandler = pTos->i;
+> 	    pTos--;
+>     }
+> 	  /* fetch the return value */
+> 	  pTos++;
+>     *pTos = *(v->aMem); 
+> 	  v->aMem->flags = MEM_Null;
+> 	  Deephemeralize(pTos);
+>     if( pTos->flags & MEM_Short ){
+>       pTos->z = pTos->zShort;
+> 	  }
+> 	  /* check for exceptions */
+> 	  sqliteVdbeFinalize(v, &pErrMsg);
+>   } else {
+>     pTos++;
+>     pTos->flags = MEM_Null;
+>   }
+>   break;
+> }
+> 
+> /* Opcode: Raise * * P3
+> **
+> ** Raise eception P3 and jump to the preset exception handler. If P3 is null,
+> ** re-raise the current exception. If no handler was set, return the exception
+> ** to the caller of this Vdbe instance.
+> */
+> case OP_Raise: {
+>   if( pOp->p3 ){
+>     sqliteSetString(&p->zErrMsg, pOp->p3, 0);
+>   } else {
+> 		if( !p->zErrMsg ) {
+> 		  p->zErrMsg = p->zSavedExcep;
+> 		}
+> 		p->zSavedExcep = 0;
+> 	}
+>   if( p->errorHandler==0 ) {
+>     p->magic = VDBE_MAGIC_HALT;
+>     p->pTos = pTos;
+>     p->rc = SQLITE_CONSTRAINT;
+>     p->errorAction = OE_Abort;
+>     return SQLITE_ERROR;
+>   }
+>   CHECK_FOR_INTERRUPT;
+>   pc = p->errorHandler - 1;
+> 	assert( pTos->flags==MEM_Addr );
+> 	p->errorHandler = pTos->i;
+> 	pTos--;
+>   break;
+> }
+> 
+> /* Opcode: ExcepWhen P1 P2 P3
+> **
+> ** Check if the current exception is the same as P3 and if so, go to the next
+> ** instruction. Otherwise, jump to the handler at P2. If P2 is 0, return the
+> ** exception to the caller of this Vdbe instance. If P3 is null, match any
+> ** exception. If P1 is non-zero the jump is reversed, i.e. make the jump if
+> ** there is a match.
+> */
+> case OP_ExcepWhen: {
+> 	int match = (pOp->p3==0) || !strcmp(pOp->p3, p->zErrMsg);
+> 
+> 	if( match ) {
+> 		p->zSavedExcep = p->zErrMsg;
+> 		p->zErrMsg = 0;
+> 	}
+> 	if( pOp->p1 ) {
+> 		match = !match;
+> 	}
+>   if( !match ) {
+>     if( pOp->p2==0 ) {
+>       p->magic = VDBE_MAGIC_HALT;
+>       p->pTos = pTos;
+>       p->rc = SQLITE_CONSTRAINT;
+>       p->errorAction = OE_Abort;
+>       return SQLITE_ERROR;
+>     }
+>     CHECK_FOR_INTERRUPT;
+>     pc = pOp->p2 - 1;
+>   }
+>   break;
+> }
+> 
+> /* Opcode: NewHandler * P2 *
+> **
+> ** Set the exception handler to the routines located at address P2. Push
+> ** the previous handler onto the stack.
+> */
+> case OP_NewHandler: {
+> 	pTos++;
+> 	pTos->i = p->errorHandler;
+> 	pTos->flags = MEM_Addr;
+>   p->errorHandler = pOp->p2;
+>   break;
+> }
+> 
+> /* Opcode: PrevHandler * * *
+> **
+> ** Pop the address of the previous handler of the stack and reinstate it.
+> ** It may reinstate a state with no handler.
+> */
+> case OP_PrevHandler: {
+> 	assert( pTos->flags==MEM_Addr );
+> 	p->errorHandler = pTos->i;
+> 	pTos--;
+>   break;
+> }
+> 
+> /* Opcode: Print * * *
+> **
+> ** Print the top of stack to the console. This opcode exists only for
+> ** testing purposes during development. DO NOT USE ANY OTHER WAY.
+> */
+> case OP_Print: {
+>   assert( pTos>=p->aStack );
+>   if( pTos->flags & MEM_Null ){
+>     printf("(null)\n");
+>   } else if( pTos->flags & MEM_Int ){
+>     printf("%d\n", pTos->i);
+>   } else if( pTos->flags & MEM_Real ){
+>     printf("%.15g\n", pTos->r);
+>   } else {
+>     printf("%s\n", pTos->z);
+>   }
+>   Release(pTos);
+>   pTos--;
+>   break;
+> }
+> 
+diff ../sqlite-2.8.17/src/vdbeInt.h src/vdbeInt.h
+132a133
+> #define MEM_Addr      0x0100   /* Value is a Vdbe address */
+271a273,274
+> 	int errorHandler;       /* Address of current error handler, 0 if none */
+> 	char *zSavedExcep;      /* Exception that might be re-raised */
+diff ../sqlite-2.8.17/src/vdbeaux.c src/vdbeaux.c
+995a996,1003
+>   if( p->nOpAlloc!=-1 ) {
+>     for(i=0; i<p->nOp; i++){
+>       if( p->aOp[i].p3type==P3_DYNAMIC ){
+>         sqliteFree(p->aOp[i].p3);
+> 	  }
+> 	}
+>     sqliteFree(p->aOp);
+>   }
+1000,1004d1007
+<   for(i=0; i<p->nOp; i++){
+<     if( p->aOp[i].p3type==P3_DYNAMIC ){
+<       sqliteFree(p->aOp[i].p3);
+<     }
+<   }
+1008d1010
+<   sqliteFree(p->aOp);
